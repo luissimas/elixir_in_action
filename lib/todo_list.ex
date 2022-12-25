@@ -81,3 +81,67 @@ defimpl Collectable, for: TodoList do
   defp into_callback(todo_list, :done), do: todo_list
   defp into_callback(_todo_list, :halt), do: :ok
 end
+
+# todo_list = TodoList.new() |>
+#             TodoList.add_entry(%{date: ~D[2018-12-19], title: "Dentist"}) |>
+#             TodoList.add_entry(%{date: ~D[2018-12-20], title: "Shopping"}) |>
+#             TodoList.add_entry(%{date: ~D[2018-12-19], title: "Movies"})
+
+defmodule TodoServer do
+  @server_name :todo_server
+
+  def start do
+    pid = spawn(fn -> loop(TodoList.new()) end)
+    Process.register(pid, @server_name)
+    :ok
+  end
+
+  def entries(date) do
+    send(@server_name, {:entries, self(), date})
+
+    receive do
+      {:todo_entries, entries} -> entries
+    after
+      5000 -> {:error, :timeout}
+    end
+  end
+
+  def add_entry(new_entry) do
+    send(@server_name, {:add_entry, new_entry})
+  end
+
+  def update_entry(entry_id, updater_fun) do
+    send(@server_name, {:update_entry, entry_id, updater_fun})
+  end
+
+  def delete_entry(entry_id) do
+    send(@server_name, {:delete_entry, entry_id})
+  end
+
+  defp loop(todo_list) do
+    new_todo_list =
+      receive do
+        message ->
+          process_message(todo_list, message)
+      end
+
+    loop(new_todo_list)
+  end
+
+  def process_message(todo_list, {:entries, caller, date}) do
+    send(caller, {:todo_entries, TodoList.entries(todo_list, date)})
+    todo_list
+  end
+
+  def process_message(todo_list, {:add_entry, new_entry}) do
+    TodoList.add_entry(todo_list, new_entry)
+  end
+
+  def process_message(todo_list, {:update_entry, entry_id, updater_fun}) do
+    TodoList.update_entry(todo_list, entry_id, updater_fun)
+  end
+
+  def process_message(todo_list, {:delete_entry, entry_id}) do
+    TodoList.delete_entry(todo_list, entry_id)
+  end
+end
